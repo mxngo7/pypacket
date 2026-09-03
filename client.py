@@ -17,6 +17,7 @@ class Client():
         self._last_heartbeat_sent: float = time.monotonic()
         self._heartbeat_interval: float = heartbeat_interval
         self._next_seq: int = 0
+        self._latest_received_seq: int = 0
 
         self._listeners: dict[Event, list[_Listener]] = {e: [] for e in Event}
 
@@ -46,7 +47,7 @@ class Client():
             seq: int = self._next_seq
             self._next_seq = (self._next_seq + 1) & 0xFFFF
 
-        self.send_bytes(packet.pack(seq = seq))
+        self.send_bytes(packet.pack(seq = seq, ack = self._latest_received_seq))
 
     def send_bytes(self, data: bytes) -> None:
         self._socket.send(data)
@@ -59,6 +60,9 @@ class Client():
                 continue
 
             packet: Packet = Packet.unpack(data)
+            
+            if packet.header.seq > self._latest_received_seq:
+                self._latest_received_seq = packet.header.seq
 
             for listener in self._listeners[Event.PACKET]:
                 listener(packet)

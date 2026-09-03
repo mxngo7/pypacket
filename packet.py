@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 class Header(struct):
     id: field[int] = u8
     seq: field[int] = u16
+    ack: field[int] = u16
     timestamp: field[int] = u64
 
 class Packet(struct):
@@ -28,7 +29,7 @@ class Packet(struct):
         Packet._next_id += 1
 
     def __init__(self, *args, **kwargs) -> None:
-        header: Header = Header(self._packet_id, 0, 0)
+        header: Header = Header(self._packet_id, 0, 0, 0)
 
         if kwargs.get("header") is None:
             super().__init__(header, *args, **kwargs)
@@ -39,10 +40,11 @@ class Packet(struct):
     def get_header(data: ReadableBuffer) -> Header:
         return Header.unpack(data)
 
-    def pack(self, *, seq: int = 0) -> bytes:
+    def pack(self, *, seq: int = 0, ack: int = 0) -> bytes:
         header: Header = Header(
             self._packet_id,
             seq,
+            ack,
             int(time.time_ns() / 1e6)
         )
 

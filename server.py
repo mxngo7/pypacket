@@ -11,8 +11,12 @@ class Connection():
     def __init__(self, server: Server, address: _Address):
         self._server: Server = server
         self._address: _Address = address
+
         self._last_heartbeat: float = time.monotonic()
         self._next_seq: int = 0
+        self._latest_received_seq: int = 0
+
+        self._send_lock: threading.Lock = threading.Lock()
 
     @property
     def address(self) -> _Address:
@@ -25,9 +29,16 @@ class Connection():
     def _heartbeat(self) -> None:
         self._last_heartbeat = time.monotonic()
 
+    def _receive_seq(self, seq: int) -> None:
+        if seq > self._latest_received_seq:
+            self._latest_received_seq = seq
+
     def send(self, packet: Packet) -> None:
-        self._server.send(packet, self._next_seq, self.address)
-        self._next_seq = (self._next_seq + 1) & 0xFFFF
+        with self._send_lock:
+            seq: int = self._next_seq
+            self._next_seq = (self._next_seq + 1) & 0xFFFF
+
+        self._server.send(packet, seq, self._latest_received_seq, self.address)
 
     def send_bytes(self, data: bytes) -> None:
         self._server.send_bytes(data, self.address)
@@ -85,6 +96,7 @@ class Server():
 
             packet: Packet = Packet.unpack(packet_bytes)
             connection._heartbeat()
+            connection._receive_seq(packet.header.seq)
 
             for listener in self._listeners[Event.PACKET]:
                 listener(packet, connection)
@@ -116,8 +128,8 @@ class Server():
         self._heartbeat_thread = threading.Thread(target = self._heartbeat)
         self._heartbeat_thread.start()
 
-    def send(self, packet: Packet, seq: int, address: _Address) -> None:
-        self.send_bytes(packet.pack(seq = seq), address)
+    def send(self, packet: Packet, seq: int, ack: int, address: _Address) -> None:
+        self.send_bytes(packet.pack(seq = seq, ack = ack), address)
 
     def send_bytes(self, data: bytes, address: _Address) -> None:
         self._socket.sendto(data, address)
